@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from app.repositories.interface import InboxRepository
 from app.schemas.ai_result import AIAnalysisResult
 from app.schemas.document import DocumentContent
 from app.schemas.email import EmailAttachment, EmailMessage
@@ -37,13 +38,16 @@ class EmailProcessingResult:
 
 class EmailProcessor:
     """
-    Orchestrates email attachment persistence and PDF analysis.
+    Orchestrates email persistence, attachment processing,
+    PDF analysis, and AI result persistence.
 
     Responsibilities:
+    - persist the incoming email
     - process every attachment
-    - persist attachment bytes
-    - process PDF attachments
+    - persist PDF attachments
+    - process PDF documents
     - run AI analysis
+    - persist AI analysis results
     - skip non-PDF attachments
     - isolate attachment failures
     """
@@ -52,11 +56,13 @@ class EmailProcessor:
         self,
         pdf_processor: PDFProcessor,
         ai_analysis_service: AIAnalysisService,
+        repository: InboxRepository,
         storage_directory: str | Path = "data/pdfs",
         file_writer: Callable[[Path, bytes], None] | None = None,
     ):
         self.pdf_processor = pdf_processor
         self.ai_analysis_service = ai_analysis_service
+        self.repository = repository
 
         self.storage_directory = Path(
             storage_directory
@@ -73,10 +79,13 @@ class EmailProcessor:
         attachment_bytes: dict[str, bytes],
     ) -> EmailProcessingResult:
         """
-        Process every attachment associated with an email.
+        Persist and process every attachment associated
+        with an email.
 
         attachment_bytes is keyed by EmailAttachment.id.
         """
+
+        self.repository.save_email(email)
 
         results: list[
             AttachmentProcessingResult
@@ -146,6 +155,10 @@ class EmailProcessor:
                 document
             )
 
+            self.repository.save_analysis(
+                analysis
+            )
+
             return AttachmentProcessingResult(
                 attachment_id=attachment.id,
                 filename=attachment.filename,
@@ -171,10 +184,6 @@ class EmailProcessor:
         attachment: EmailAttachment,
         content: bytes,
     ) -> Path:
-        """
-        Persist an attachment to the configured storage directory.
-        """
-
         self.storage_directory.mkdir(
             parents=True,
             exist_ok=True,
@@ -207,8 +216,4 @@ class EmailProcessor:
     def _sanitize_filename(
         filename: str,
     ) -> str:
-        """
-        Prevent directory traversal through attachment names.
-        """
-
         return Path(filename).name

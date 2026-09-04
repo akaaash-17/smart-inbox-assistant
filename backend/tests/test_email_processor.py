@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.repositories.memory import (
+    InMemoryInboxRepository,
+)
 from app.schemas.ai_result import (
     AIAnalysisResult,
     ClassificationResult,
@@ -13,36 +16,39 @@ from app.schemas.email import (
     EmailAttachment,
     EmailMessage,
 )
-from app.services.ai.analysis import AIAnalysisService
-from app.services.email.processor import EmailProcessor
+from app.services.email.processor import (
+    EmailProcessor,
+)
 
 
 class FakePDFProcessor:
-    """
-    Deterministic PDF processor for unit tests.
-    """
-
     def __init__(self):
         self.processed_paths: list[str] = []
 
-    def process(
-        self,
-        file_path,
-        document_id=None,
-    ):
+    def process(self, file_path, document_id=None):
         self.processed_paths.append(
             str(file_path)
         )
 
         return DocumentContent(
-            document_id=document_id or "test-document",
-            filename=Path(file_path).name,
+            document_id=(
+                document_id
+                or "test-document"
+            ),
+            filename=Path(
+                file_path
+            ).name,
             pdf_type="digital",
-            text="Synthetic safety report text.",
+            text=(
+                "Synthetic safety report text."
+            ),
             pages=[
                 DocumentPage(
                     page_number=1,
-                    text="Synthetic safety report text.",
+                    text=(
+                        "Synthetic safety "
+                        "report text."
+                    ),
                     confidence=1.0,
                 )
             ],
@@ -50,17 +56,10 @@ class FakePDFProcessor:
 
 
 class FakeAIAnalysisService:
-    """
-    Deterministic AI analysis service for unit tests.
-    """
-
     def __init__(self):
         self.analyzed_documents: list[str] = []
 
-    def analyze(
-        self,
-        document,
-    ):
+    def analyze(self, document):
         self.analyzed_documents.append(
             document.document_id
         )
@@ -99,7 +98,9 @@ def create_email() -> EmailMessage:
             30,
             tzinfo=timezone.utc,
         ),
-        body="Please review the attached report.",
+        body=(
+            "Please review the attached report."
+        ),
         attachments=[
             EmailAttachment(
                 id="attachment-001",
@@ -119,24 +120,60 @@ def create_email() -> EmailMessage:
     )
 
 
-def test_process_email_processes_pdf_and_skips_non_pdf(
+def create_processor(
     tmp_path,
+    repository=None,
+    pdf_processor=None,
+    ai_service=None,
 ):
-    pdf_processor = FakePDFProcessor()
-    ai_service = FakeAIAnalysisService()
+    repository = (
+        repository
+        or InMemoryInboxRepository()
+    )
+
+    pdf_processor = (
+        pdf_processor
+        or FakePDFProcessor()
+    )
+
+    ai_service = (
+        ai_service
+        or FakeAIAnalysisService()
+    )
 
     processor = EmailProcessor(
         pdf_processor=pdf_processor,
         ai_analysis_service=ai_service,
+        repository=repository,
         storage_directory=tmp_path,
     )
+
+    return (
+        processor,
+        repository,
+        pdf_processor,
+        ai_service,
+    )
+
+
+def test_process_email_processes_pdf_and_skips_non_pdf(
+    tmp_path,
+):
+    (
+        processor,
+        repository,
+        pdf_processor,
+        ai_service,
+    ) = create_processor(tmp_path)
 
     email = create_email()
 
     result = processor.process_email(
         email=email,
         attachment_bytes={
-            "attachment-001": b"synthetic pdf content",
+            "attachment-001": (
+                b"synthetic pdf content"
+            ),
         },
     )
 
@@ -145,7 +182,20 @@ def test_process_email_processes_pdf_and_skips_non_pdf(
         == "email-processor-001"
     )
 
-    assert len(result.attachments) == 2
+    assert len(
+        result.attachments
+    ) == 2
+
+    stored_email = repository.get_email(
+        "email-processor-001"
+    )
+
+    assert stored_email is not None
+
+    assert (
+        stored_email.subject
+        == "Safety report"
+    )
 
     pdf_result = result.attachments[0]
 
@@ -155,15 +205,24 @@ def test_process_email_processes_pdf_and_skips_non_pdf(
     )
 
     assert pdf_result.is_pdf is True
-    assert pdf_result.stored_path is not None
-    assert pdf_result.document is not None
-    assert pdf_result.analysis is not None
+    assert (
+        pdf_result.stored_path
+        is not None
+    )
 
     assert (
-        Path(
-            pdf_result.stored_path
-        ).exists()
+        pdf_result.document
+        is not None
     )
+
+    assert (
+        pdf_result.analysis
+        is not None
+    )
+
+    assert Path(
+        pdf_result.stored_path
+    ).exists()
 
     assert (
         pdf_result.document.document_id
@@ -175,7 +234,27 @@ def test_process_email_processes_pdf_and_skips_non_pdf(
         == ["attachment-001"]
     )
 
-    non_pdf_result = result.attachments[1]
+    stored_analysis = (
+        repository.get_analysis(
+            "attachment-001"
+        )
+    )
+
+    assert stored_analysis is not None
+
+    assert (
+        stored_analysis.document_id
+        == "attachment-001"
+    )
+
+    assert (
+        stored_analysis.classifications[0].category
+        == "SAFETY_REPORT"
+    )
+
+    non_pdf_result = (
+        result.attachments[1]
+    )
 
     assert (
         non_pdf_result.status
@@ -191,14 +270,12 @@ def test_process_email_processes_pdf_and_skips_non_pdf(
 def test_missing_pdf_bytes_is_failed(
     tmp_path,
 ):
-    pdf_processor = FakePDFProcessor()
-    ai_service = FakeAIAnalysisService()
-
-    processor = EmailProcessor(
-        pdf_processor=pdf_processor,
-        ai_analysis_service=ai_service,
-        storage_directory=tmp_path,
-    )
+    (
+        processor,
+        repository,
+        _pdf_processor,
+        ai_service,
+    ) = create_processor(tmp_path)
 
     email = create_email()
 
@@ -224,6 +301,18 @@ def test_missing_pdf_bytes_is_failed(
         == []
     )
 
+    assert (
+        repository.get_email(
+            "email-processor-001"
+        )
+        is not None
+    )
+
+    assert (
+        repository.list_analyses()
+        == []
+    )
+
 
 def test_one_failed_attachment_does_not_stop_other_attachments(
     tmp_path,
@@ -244,7 +333,9 @@ def test_one_failed_attachment_does_not_stop_other_attachments(
 
             return DocumentContent(
                 document_id=document_id,
-                filename=Path(file_path).name,
+                filename=Path(
+                    file_path
+                ).name,
                 pdf_type="digital",
                 text="Valid document",
                 pages=[
@@ -282,9 +373,16 @@ def test_one_failed_attachment_does_not_stop_other_attachments(
 
     ai_service = FakeAIAnalysisService()
 
+    repository = (
+        InMemoryInboxRepository()
+    )
+
     processor = EmailProcessor(
-        pdf_processor=SelectivePDFProcessor(),
+        pdf_processor=(
+            SelectivePDFProcessor()
+        ),
         ai_analysis_service=ai_service,
+        repository=repository,
         storage_directory=tmp_path,
     )
 
@@ -316,18 +414,31 @@ def test_one_failed_attachment_does_not_stop_other_attachments(
         == ["attachment-002"]
     )
 
+    stored_analysis = (
+        repository.get_analysis(
+            "attachment-002"
+        )
+    )
+
+    assert stored_analysis is not None
+
+    assert (
+        repository.get_analysis(
+            "attachment-001"
+        )
+        is None
+    )
+
 
 def test_attachment_filename_cannot_escape_storage_directory(
     tmp_path,
 ):
-    pdf_processor = FakePDFProcessor()
-    ai_service = FakeAIAnalysisService()
-
-    processor = EmailProcessor(
-        pdf_processor=pdf_processor,
-        ai_analysis_service=ai_service,
-        storage_directory=tmp_path,
-    )
+    (
+        processor,
+        _repository,
+        _pdf_processor,
+        _ai_service,
+    ) = create_processor(tmp_path)
 
     email = EmailMessage(
         id="email-safe-path",
@@ -372,6 +483,98 @@ def test_attachment_filename_cannot_escape_storage_directory(
         stored_path.name
         == (
             "email-safe-path_"
-            "attachment-safe_outside.pdf"
+            "attachment-safe_"
+            "outside.pdf"
         )
+    )
+
+
+def test_email_is_persisted_even_when_attachment_fails(
+    tmp_path,
+):
+    repository = (
+        InMemoryInboxRepository()
+    )
+
+    processor = EmailProcessor(
+        pdf_processor=FakePDFProcessor(),
+        ai_analysis_service=(
+            FakeAIAnalysisService()
+        ),
+        repository=repository,
+        storage_directory=tmp_path,
+    )
+
+    email = create_email()
+
+    result = processor.process_email(
+        email=email,
+        attachment_bytes={
+            "attachment-001": b"invalid"
+        },
+    )
+
+    assert (
+        result.email_id
+        == email.id
+    )
+
+    stored_email = repository.get_email(
+        email.id
+    )
+
+    assert stored_email is not None
+
+    assert (
+        stored_email.sender
+        == email.sender
+    )
+
+    assert (
+        stored_email.subject
+        == email.subject
+    )
+
+
+def test_analysis_is_persisted_after_successful_processing(
+    tmp_path,
+):
+    repository = (
+        InMemoryInboxRepository()
+    )
+
+    processor = EmailProcessor(
+        pdf_processor=FakePDFProcessor(),
+        ai_analysis_service=(
+            FakeAIAnalysisService()
+        ),
+        repository=repository,
+        storage_directory=tmp_path,
+    )
+
+    email = create_email()
+
+    processor.process_email(
+        email=email,
+        attachment_bytes={
+            "attachment-001": b"pdf"
+        },
+    )
+
+    analyses = (
+        repository.list_analyses()
+    )
+
+    assert len(analyses) == 1
+
+    analysis = analyses[0]
+
+    assert (
+        analysis.document_id
+        == "attachment-001"
+    )
+
+    assert (
+        analysis.relevant
+        is True
     )
