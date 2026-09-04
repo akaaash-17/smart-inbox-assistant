@@ -1,9 +1,15 @@
 from pathlib import Path
 
 import numpy as np
+import pdfplumber
 import pymupdf
 
-from app.schemas.document import DocumentContent, DocumentPage
+from app.schemas.document import (
+    DocumentContent,
+    DocumentPage,
+    ExtractedTable,
+    SourceLocation,
+)
 from app.services.ocr_processor import OCRProcessor
 
 
@@ -17,12 +23,12 @@ class PDFProcessor:
     - Page-by-page text extraction
     - Digital vs scanned detection
     - OCR for image-only pages
+    - Structured table extraction
     - Page-level confidence
     - Page-level traceability
 
     Future capabilities:
     - Handwriting/vision analysis
-    - Table extraction
     - Image analysis
     - Article detection
     - Language detection
@@ -67,25 +73,25 @@ class PDFProcessor:
         if pdf_type == "scanned":
             pages = self._run_ocr(path, pages)
 
+        tables = self._extract_tables(
+            path,
+            document_id,
+        )
+
         combined_text = "\n\n".join(
             page.text
             for page in pages
             if page.text
         )
 
-        detected_type = (
-            pdf_type
-            if pdf_type != "scanned"
-            else "scanned"
-        )
-
         return DocumentContent(
             document_id=document_id,
             filename=path.name,
-            pdf_type=detected_type,
+            pdf_type=pdf_type,
             language="en" if combined_text else None,
             text=combined_text,
             pages=pages,
+            tables=tables,
         )
 
     @staticmethod
@@ -223,3 +229,86 @@ class PDFProcessor:
                 )
 
         return updated_pages
+
+    @staticmethod
+    def _extract_tables(
+        file_path: Path,
+        document_id: str,
+    ) -> list[ExtractedTable]:
+        """
+        Extract tables from a PDF using pdfplumber.
+
+        Each table is converted into:
+        - column names
+        - structured row dictionaries
+        - source page information
+        """
+
+        extracted_tables: list[ExtractedTable] = []
+
+        with pdfplumber.open(file_path) as pdf:
+            for page_number, page in enumerate(
+                pdf.pages,
+                start=1,
+            ):
+                tables = page.extract_tables()
+
+                for table_index, table in enumerate(
+                    tables,
+                    start=1,
+                ):
+                    if not table:
+                        continue
+
+                    cleaned_rows = [
+                        [
+                            (cell or "").strip()
+                            for cell in row
+                        ]
+                        for row in table
+                        if row
+                    ]
+
+                    if not cleaned_rows:
+                        continue
+
+                    columns = cleaned_rows[0]
+
+                    if not any(columns):
+                        continue
+
+                    rows: list[dict[str, str]] = []
+
+                    for row in cleaned_rows[1:]:
+                        normalized_row = (
+                            row[:len(columns)]
+                            + [""] * (
+                                len(columns)
+                                - len(row)
+                            )
+                        )
+
+                        rows.append(
+                            {
+                                columns[index]: normalized_row[index]
+                                for index in range(
+                                    len(columns)
+                                )
+                                if columns[index]
+                            }
+                        )
+
+                    extracted_tables.append(
+                        ExtractedTable(
+                            name=f"Table {table_index}",
+                            columns=columns,
+                            rows=rows,
+                            source=SourceLocation(
+                                source_type="pdf",
+                                source_id=document_id,
+                                page=page_number,
+                            ),
+                        )
+                    )
+
+        return extracted_tables

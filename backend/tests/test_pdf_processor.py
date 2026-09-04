@@ -25,14 +25,16 @@ SCANNED_PDF = (
     / "scanned_document.pdf"
 )
 
+TABLE_PDF = (
+    FIXTURE_DIR
+    / "digital_table_report.pdf"
+)
+
 
 class FakeOCRProcessor:
     """
     Deterministic OCR implementation used for PDFProcessor
     tests.
-
-    This avoids loading the real EasyOCR model every time
-    the PDF tests run.
     """
 
     def process_image(
@@ -52,8 +54,6 @@ class FakeOCRProcessor:
 def create_scanned_pdf():
     """
     Create a synthetic image-only PDF fixture.
-
-    The page contains an image rather than a PDF text layer.
     """
 
     doc = pymupdf.open()
@@ -145,7 +145,6 @@ def test_process_scanned_pdf_with_ocr():
 
     assert document.document_id == "doc-scanned-001"
     assert document.filename == "scanned_document.pdf"
-
     assert document.pdf_type == "scanned"
 
     assert len(document.pages) == 1
@@ -171,6 +170,56 @@ def test_scanned_pdf_without_ocr_processor():
     assert document.pages[0].text == ""
     assert document.pages[0].confidence == 0.0
     assert document.text == ""
+
+
+def test_extract_structured_table():
+    processor = PDFProcessor()
+
+    document = processor.process(
+        TABLE_PDF,
+        document_id="doc-table-001",
+    )
+
+    assert document.pdf_type == "digital"
+
+    assert len(document.tables) == 1
+
+    table = document.tables[0]
+
+    assert table.name == "Table 1"
+
+    assert table.columns == [
+        "Patient",
+        "Product",
+        "Dose",
+        "Reaction",
+    ]
+
+    assert table.rows == [
+        {
+            "Patient": "54/M",
+            "Product": "MedX",
+            "Dose": "10 mg",
+            "Reaction": "Skin rash",
+        },
+        {
+            "Patient": "61/F",
+            "Product": "MedX",
+            "Dose": "20 mg",
+            "Reaction": "Nausea",
+        },
+        {
+            "Patient": "47/M",
+            "Product": "MedY",
+            "Dose": "5 mg",
+            "Reaction": "Headache",
+        },
+    ]
+
+    assert table.source is not None
+    assert table.source.source_type == "pdf"
+    assert table.source.source_id == "doc-table-001"
+    assert table.source.page == 1
 
 
 def test_process_missing_pdf():
