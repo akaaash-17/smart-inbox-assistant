@@ -9,12 +9,13 @@ from app.schemas.document import DocumentContent
 from app.services.ai.classifier import DocumentClassifier
 from app.services.ai.evidence_resolver import EvidenceResolver
 from app.services.ai.extractor import DocumentExtractor
+from app.services.ai.summarizer import DocumentSummarizer
 
 
 class AIAnalysisService:
     """
-    Orchestrates classification, domain extraction, and
-    evidence resolution for a processed document.
+    Orchestrates classification, domain extraction, evidence
+    resolution, and summary generation for a processed document.
     """
 
     def __init__(
@@ -22,10 +23,12 @@ class AIAnalysisService:
         classifier: DocumentClassifier,
         extractor: DocumentExtractor,
         evidence_resolver: EvidenceResolver,
+        summarizer: DocumentSummarizer,
     ):
         self.classifier = classifier
         self.extractor = extractor
         self.evidence_resolver = evidence_resolver
+        self.summarizer = summarizer
 
     def analyze(
         self,
@@ -33,6 +36,12 @@ class AIAnalysisService:
     ) -> AIAnalysisResult:
         """
         Perform complete AI analysis on a processed document.
+
+        Pipeline:
+        1. Classification
+        2. Domain extraction
+        3. Evidence resolution
+        4. Summary generation
         """
 
         if not document.text.strip():
@@ -65,6 +74,10 @@ class AIAnalysisService:
             document,
         )
 
+        summary_result = self.summarizer.summarize(
+            text=document.text,
+        )
+
         relevant = any(
             classification.category != "NOT_RELEVANT"
             for classification in (
@@ -81,7 +94,7 @@ class AIAnalysisService:
             classifications=classification_result.classifications,
             relevant=relevant,
             relevance_reason=relevance_reason,
-            summary="Not generated yet.",
+            summary=summary_result.summary,
             safety_report=safety_report,
             quality_complaint=quality_complaint,
             info_request=info_request,

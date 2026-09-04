@@ -3,22 +3,19 @@ from app.schemas.document import (
     DocumentPage,
 )
 from app.services.ai.analysis import AIAnalysisService
-from app.services.ai.classifier import (
-    ClassificationResponse,
-    DocumentClassifier,
-)
+from app.services.ai.classifier import DocumentClassifier
 from app.services.ai.evidence_resolver import EvidenceResolver
-from app.services.ai.extractor import (
-    DocumentExtractor,
-    DomainExtractionResponse,
-)
+from app.services.ai.extractor import DocumentExtractor
 from app.services.ai.provider import AIProvider
+from app.services.ai.summarizer import DocumentSummarizer
 
 
 class FakeAIProvider(AIProvider):
     """
-    Deterministic provider that returns classification JSON
-    for the first request and extraction JSON for the second.
+    Deterministic provider that returns:
+    1. classification JSON
+    2. extraction JSON
+    3. summary text
     """
 
     def __init__(self):
@@ -40,108 +37,124 @@ class FakeAIProvider(AIProvider):
             }
             """
 
-        return """
-        {
-          "safety_report": {
-            "patient": {
-              "age": {
-                "value": "54",
-                "confidence": 0.99
+        if self.calls == 2:
+            return """
+            {
+              "safety_report": {
+                "patient": {
+                  "age": {
+                    "value": "54",
+                    "confidence": 0.99
+                  },
+                  "sex": {
+                    "value": "Male",
+                    "confidence": 0.99
+                  },
+                  "weight": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  },
+                  "height": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  },
+                  "relevant_history": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  }
+                },
+                "reporter": {
+                  "name": {
+                    "value": "Dr. John Smith",
+                    "confidence": 0.98
+                  },
+                  "role": {
+                    "value": "Physician",
+                    "confidence": 0.98
+                  },
+                  "country": {
+                    "value": "India",
+                    "confidence": 0.97
+                  }
+                },
+                "product": {
+                  "name": {
+                    "value": "MedX 10 mg",
+                    "confidence": 0.99
+                  },
+                  "dose": {
+                    "value": "10 mg",
+                    "confidence": 0.98
+                  },
+                  "route": {
+                    "value": "Oral",
+                    "confidence": 0.98
+                  },
+                  "start_date": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  },
+                  "stop_date": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  }
+                },
+                "reaction": {
+                  "description": {
+                    "value": "Skin rash",
+                    "confidence": 0.99
+                  },
+                  "onset": {
+                    "value": "2 days after starting",
+                    "confidence": 0.96
+                  },
+                  "outcome": {
+                    "value": "Recovered",
+                    "confidence": 0.98
+                  }
+                },
+                "severity": {
+                  "serious": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  },
+                  "death": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  },
+                  "hospitalization": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  },
+                  "life_threatening": {
+                    "value": "Not stated",
+                    "confidence": 1.0
+                  }
+                },
+                "narrative": {
+                  "value": "A 54-year-old male developed a skin rash after starting MedX 10 mg orally.",
+                  "confidence": 0.95
+                }
               },
-              "sex": {
-                "value": "Male",
-                "confidence": 0.99
-              },
-              "weight": {
-                "value": "Not stated",
-                "confidence": 1.0
-              },
-              "height": {
-                "value": "Not stated",
-                "confidence": 1.0
-              },
-              "relevant_history": {
-                "value": "Not stated",
-                "confidence": 1.0
-              }
-            },
-            "reporter": {
-              "name": {
-                "value": "Dr. John Smith",
-                "confidence": 0.98
-              },
-              "role": {
-                "value": "Physician",
-                "confidence": 0.98
-              },
-              "country": {
-                "value": "India",
-                "confidence": 0.97
-              }
-            },
-            "product": {
-              "name": {
-                "value": "MedX 10 mg",
-                "confidence": 0.99
-              },
-              "dose": {
-                "value": "10 mg",
-                "confidence": 0.98
-              },
-              "route": {
-                "value": "Oral",
-                "confidence": 0.98
-              },
-              "start_date": {
-                "value": "Not stated",
-                "confidence": 1.0
-              },
-              "stop_date": {
-                "value": "Not stated",
-                "confidence": 1.0
-              }
-            },
-            "reaction": {
-              "description": {
-                "value": "Skin rash",
-                "confidence": 0.99
-              },
-              "onset": {
-                "value": "2 days after starting",
-                "confidence": 0.96
-              },
-              "outcome": {
-                "value": "Recovered",
-                "confidence": 0.98
-              }
-            },
-            "severity": {
-              "serious": {
-                "value": "Not stated",
-                "confidence": 1.0
-              },
-              "death": {
-                "value": "Not stated",
-                "confidence": 1.0
-              },
-              "hospitalization": {
-                "value": "Not stated",
-                "confidence": 1.0
-              },
-              "life_threatening": {
-                "value": "Not stated",
-                "confidence": 1.0
-              }
-            },
-            "narrative": {
-              "value": "A 54-year-old male developed a skin rash after starting MedX 10 mg orally.",
-              "confidence": 0.95
+              "quality_complaint": null,
+              "info_request": null
             }
-          },
-          "quality_complaint": null,
-          "info_request": null
-        }
-        """
+            """
+
+        return (
+            "The document reports a safety event involving a specific patient. "
+            "The patient is a 54-year-old male. "
+            "The reported product is MedX 10 mg. "
+            "The product was administered orally. "
+            "The reported dose was 10 mg. "
+            "The patient developed a skin rash after starting the product. "
+            "The reaction reportedly began two days after treatment started. "
+            "The reported outcome was recovery. "
+            "The reporter is identified as Dr. John Smith. "
+            "The reporter is described as a physician. "
+            "The reporter is associated with India. "
+            "The document contains information relevant to a potential safety report."
+        )
 
 
 def create_document() -> DocumentContent:
@@ -175,18 +188,21 @@ def create_document() -> DocumentContent:
     )
 
 
+def create_service(
+    provider: FakeAIProvider,
+) -> AIAnalysisService:
+    return AIAnalysisService(
+        classifier=DocumentClassifier(provider),
+        extractor=DocumentExtractor(provider),
+        evidence_resolver=EvidenceResolver(),
+        summarizer=DocumentSummarizer(provider),
+    )
+
+
 def test_integrated_ai_analysis():
     provider = FakeAIProvider()
 
-    classifier = DocumentClassifier(provider)
-    extractor = DocumentExtractor(provider)
-    resolver = EvidenceResolver()
-
-    service = AIAnalysisService(
-        classifier=classifier,
-        extractor=extractor,
-        evidence_resolver=resolver,
-    )
+    service = create_service(provider)
 
     document = create_document()
 
@@ -241,17 +257,28 @@ def test_integrated_ai_analysis():
         == "A specific patient experienced an adverse reaction."
     )
 
-    assert result.summary == "Not generated yet."
+    assert result.summary != "Not generated yet."
+    assert result.summary.strip()
+
+    sentence_count = (
+        DocumentSummarizer._count_sentences(
+            result.summary
+        )
+    )
+
+    assert (
+        DocumentSummarizer.MIN_SENTENCES
+        <= sentence_count
+        <= DocumentSummarizer.MAX_SENTENCES
+    )
+
+    assert provider.calls == 3
 
 
 def test_analysis_rejects_empty_document():
     provider = FakeAIProvider()
 
-    service = AIAnalysisService(
-        classifier=DocumentClassifier(provider),
-        extractor=DocumentExtractor(provider),
-        evidence_resolver=EvidenceResolver(),
-    )
+    service = create_service(provider)
 
     empty_document = DocumentContent(
         document_id="doc-empty",
