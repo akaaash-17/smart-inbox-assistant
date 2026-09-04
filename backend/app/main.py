@@ -1,20 +1,33 @@
 from fastapi import FastAPI
 
 from app.api.routes.health import router as health_router
+from app.api.routes.inbox import router as inbox_router
 from app.core.config import settings
 
 
 app = FastAPI(
     title=settings.app_name,
-    description="AI-powered healthcare email and document intelligence platform.",
+    description=(
+        "AI-powered healthcare email and "
+        "document intelligence platform."
+    ),
     version=settings.version,
 )
 
 
-app.include_router(health_router)
+app.include_router(
+    health_router
+)
+
+app.include_router(
+    inbox_router
+)
 
 
-@app.get("/", tags=["Root"])
+@app.get(
+    "/",
+    tags=["Root"],
+)
 def root():
     return {
         "application": settings.app_name,
