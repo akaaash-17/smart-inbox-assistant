@@ -7,6 +7,7 @@ import pymupdf
 from app.schemas.document import (
     DocumentContent,
     DocumentPage,
+    ExtractedImage,
     ExtractedTable,
     SourceLocation,
 )
@@ -24,12 +25,13 @@ class PDFProcessor:
     - Digital vs scanned detection
     - OCR for image-only pages
     - Structured table extraction
+    - Embedded image detection
     - Page-level confidence
     - Page-level traceability
 
     Future capabilities:
     - Handwriting/vision analysis
-    - Image analysis
+    - Image description
     - Article detection
     - Language detection
     - Translation
@@ -78,6 +80,11 @@ class PDFProcessor:
             document_id,
         )
 
+        images = self._extract_images(
+            path,
+            document_id,
+        )
+
         combined_text = "\n\n".join(
             page.text
             for page in pages
@@ -92,6 +99,7 @@ class PDFProcessor:
             text=combined_text,
             pages=pages,
             tables=tables,
+            images=images,
         )
 
     @staticmethod
@@ -312,3 +320,59 @@ class PDFProcessor:
                     )
 
         return extracted_tables
+
+    @staticmethod
+    def _extract_images(
+        file_path: Path,
+        document_id: str,
+    ) -> list[ExtractedImage]:
+        """
+        Detect embedded images in a PDF.
+
+        This stage intentionally does not attempt to interpret
+        the visual content. It only establishes that an image
+        exists and records its exact PDF page.
+
+        Visual interpretation will be handled later by the
+        vision/AI layer.
+
+        Every detected image is flagged for human review because
+        its meaning has not yet been determined.
+        """
+
+        extracted_images: list[ExtractedImage] = []
+
+        with pymupdf.open(file_path) as pdf:
+            for page_number, page in enumerate(
+                pdf,
+                start=1,
+            ):
+                images = page.get_images(
+                    full=True
+                )
+
+                for image_index, _image in enumerate(
+                    images,
+                    start=1,
+                ):
+                    extracted_images.append(
+                        ExtractedImage(
+                            description=(
+                                "Embedded image detected; "
+                                "visual analysis required."
+                            ),
+                            requires_review=True,
+                            source=SourceLocation(
+                                source_type="pdf",
+                                source_id=document_id,
+                                page=page_number,
+                                text=(
+                                    f"Embedded image "
+                                    f"{image_index} detected "
+                                    f"on page {page_number}."
+                                ),
+                            ),
+                        )
+                    )
+
+        return extracted_images

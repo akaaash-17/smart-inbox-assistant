@@ -30,6 +30,11 @@ TABLE_PDF = (
     / "digital_table_report.pdf"
 )
 
+IMAGE_PDF = (
+    FIXTURE_DIR
+    / "digital_image_report.pdf"
+)
+
 
 class FakeOCRProcessor:
     """
@@ -220,6 +225,39 @@ def test_extract_structured_table():
     assert table.source.source_type == "pdf"
     assert table.source.source_id == "doc-table-001"
     assert table.source.page == 1
+
+
+def test_extract_embedded_images():
+    processor = PDFProcessor()
+
+    document = processor.process(
+        IMAGE_PDF,
+        document_id="doc-image-001",
+    )
+
+    assert document.pdf_type == "digital"
+
+    assert len(document.images) == 1
+
+    image = document.images[0]
+
+    assert (
+        image.description
+        == "Embedded image detected; "
+        "visual analysis required."
+    )
+
+    assert image.requires_review is True
+
+    assert image.source is not None
+    assert image.source.source_type == "pdf"
+    assert image.source.source_id == "doc-image-001"
+    assert image.source.page == 1
+
+    assert (
+        image.source.text
+        == "Embedded image 1 detected on page 1."
+    )
 
 
 def test_process_missing_pdf():
